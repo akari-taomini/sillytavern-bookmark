@@ -8,6 +8,7 @@
     const WIDTH = 720;
     const MAX_HEIGHT = 1600;
     const SCALE = 2;
+    const MASK = '\uFFFC';
     const breathe = () => new Promise(resolve => setTimeout(resolve, 0));
     let active = null;
     let selected = null;
@@ -60,17 +61,31 @@
                 <label>标题（可留空）<input type="text" data-field="title" placeholder="书摘" maxlength="100"></label>
                 <label><input type="checkbox" data-field="maskUser" checked> 遮罩 user 名称</label>
                 <label>user 名称<input type="text" data-field="user" autocomplete="off" spellcheck="false"><small data-role="nameHint"></small></label>
-                <label>额外打码名称 / 文本<textarea data-field="names" placeholder="每行一个，按原样匹配&#10;例如：小明&#10;@example" spellcheck="false"></textarea><small>区分大小写，较长名称优先。使用实心遮罩，不把被遮住的文字写进图片。</small></label>
+                <label>额外打码名称 / 文本<textarea data-field="names" placeholder="每行一个，按原样匹配&#10;例如：小明&#10;@example" spellcheck="false"></textarea><small>区分大小写，较长名称优先。</small></label>
+                <label>遮罩样式<select data-field="maskStyle"><option value="glass">毛玻璃马赛克</option><option value="image">自选图片覆盖</option></select></label>
+                <label data-role="imageControl" hidden>遮罩图片<input type="file" data-field="maskImage" accept="image/png,image/jpeg,image/webp"><small data-role="imageHint">选择 PNG / JPG / WebP，在本地处理。</small></label>
                 <label>排版<select data-field="theme"><option value="paper">温暖书页</option><option value="clean">极简留白</option><option value="night">深色夜读</option><option value="compact">紧凑手记</option></select></label>
+                <label>截图字体<select data-field="font"><option value="theme">跟随酒馆字体</option><option value="serif">宋体 / 衬线</option><option value="sans">黑体 / 无衬线</option><option value="custom">自定义字体名称</option><option value="uploaded">上传字体</option></select></label>
+                <label data-role="customFont" hidden>字体名称<input type="text" data-field="fontName" placeholder="例如：霞鹜文楷" maxlength="100"><small>填写本机已安装或酒馆已加载的字体名称。</small></label>
+                <label data-role="fontUpload" hidden>本地字体文件<input type="file" data-field="fontFile" accept=".woff2,.woff,.ttf,.otf"><small data-role="fontHint">字体仅用于本次书摘。</small></label>
+                <div class="st-bookmark-colors"><label>背景颜色<input type="color" data-field="paper" value="#faf6ed"></label><label>字体颜色<input type="color" data-field="ink" value="#302c27"></label></div>
                 <label>字号<select data-field="size"><option value="0">模板默认</option><option value="24">小</option><option value="28">中</option><option value="32">大</option></select></label>
                 <div class="st-bookmark-status" role="status" aria-live="polite"></div>
-                <div class="st-bookmark-actions"><button type="button" class="st-bookmark-primary" data-action="save" disabled>保存全部 PNG</button><button type="button" data-action="cancel" hidden>取消导出</button></div>
+                <div class="st-bookmark-actions"><button type="button" class="st-bookmark-primary" data-action="generate">生成图片</button><button type="button" data-action="save" disabled>保存全部 PNG</button><button type="button" data-action="cancel" hidden>取消导出</button></div>
                 <small>长文自动分页。可在每张预览下单独保存；图片不包含头像、楼层编号或账号信息。</small>
               </section>
               <section class="st-bookmark-preview" aria-label="打码后的图片预览"></section>
             </div>
           </div>`;
         document.body.append(dialog);
+        // Keep native theme hooks; only the panel surface is forced opaque.
+        dialog.querySelectorAll('button').forEach(el => el.classList.add('menu_button'));
+        dialog.querySelectorAll('textarea, input[type="text"]').forEach(el => el.classList.add('text_pole'));
+        const theme = getComputedStyle(document.body);
+        dialog.style.setProperty('background-color', opaqueColor(theme.getPropertyValue('--SmartThemeBlurTintColor') || theme.backgroundColor), 'important');
+        dialog.style.setProperty('opacity', '1', 'important');
+        dialog.style.setProperty('backdrop-filter', 'none', 'important');
+        dialog.style.setProperty('font-family', theme.fontFamily);
         active = dialog;
         const field = key => dialog.querySelector(`[data-field="${key}"]`);
         const action = key => dialog.querySelector(`[data-action="${key}"]`);
@@ -83,7 +98,11 @@
             : '未自动获得 user 名称，请在这里填写需要遮罩的名称。';
         action('snippet').disabled = !snippet;
         let revision = 0;
-        let timer;
+        let maskImage = null;
+        let imageVersion = 0;
+        let fontVersion = 0;
+        let uploadedFont = null;
+        let uploadBusy = 0;
         let pages = [];
         let exporting = false;
         let exportToken = 0;
@@ -91,7 +110,9 @@
         const urls = new Set();
         const gone = () => !dialog.isConnected;
         const close = () => {
-            revision++; exportToken++; clearTimeout(timer);
+            revision++; exportToken++; imageVersion++; fontVersion++;
+            if (uploadedFont) document.fonts.delete(uploadedFont);
+            maskImage = null;
             for (const url of urls) URL.revokeObjectURL(url);
             dialog.close(); dialog.remove(); active = null;
         };
@@ -100,17 +121,76 @@
 
         function invalidate() {
             revision++; exportToken++; exportRun++; exporting = false;
-            clearTimeout(timer);
             lazy.disconnect();
             pages = [];
             // Never leave a stale, potentially less-redacted preview visible after a privacy edit.
             preview.replaceChildren();
+            const empty = document.createElement('p');
+            empty.className = 'st-bookmark-empty';
+            empty.textContent = '选好字体、颜色和遮罩，再生成你的书摘。';
+            preview.append(empty);
             action('save').disabled = true;
+            action('generate').disabled = uploadBusy > 0;
             action('cancel').hidden = true;
-            status.textContent = '正在排版…';
-            timer = setTimeout(() => render(revision), 140);
+            status.textContent = '设置完成后，点击「生成图片」。';
         }
-        dialog.addEventListener('input', event => { if (event.target.matches('[data-field]')) invalidate(); });
+        dialog.addEventListener('input', event => {
+            if (!event.target.matches('[data-field]')) return;
+            if (event.target === field('theme')) {
+                dialog.dataset.theme = field('theme').value;
+                const palette = getComputedStyle(dialog);
+                field('paper').value = palette.getPropertyValue('--sb-paper').trim();
+                field('ink').value = palette.getPropertyValue('--sb-ink').trim();
+            }
+            dialog.querySelector('[data-role="imageControl"]').hidden = field('maskStyle').value !== 'image';
+            dialog.querySelector('[data-role="customFont"]').hidden = field('font').value !== 'custom';
+            dialog.querySelector('[data-role="fontUpload"]').hidden = field('font').value !== 'uploaded';
+            invalidate();
+        });
+        field('maskImage').addEventListener('change', async () => {
+            const version = ++imageVersion;
+            const file = field('maskImage').files[0];
+            maskImage = null;
+            invalidate();
+            const hint = dialog.querySelector('[data-role="imageHint"]');
+            if (!file) { hint.textContent = '请选择遮罩图片。'; return; }
+            if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024) {
+                hint.textContent = '请选择不超过 8 MB 的 PNG / JPG / WebP。'; return;
+            }
+            uploadBusy++; action('generate').disabled = true; hint.textContent = '正在读取图片…';
+            try {
+                const bitmap = await createImageBitmap(file, { resizeWidth: 512, resizeHeight: 256, resizeQuality: 'high' });
+                if (gone() || version !== imageVersion) { bitmap.close(); return; }
+                const small = document.createElement('canvas'); small.width = 512; small.height = 256;
+                small.getContext('2d').drawImage(bitmap, 0, 0); bitmap.close();
+                maskImage = small; hint.textContent = '图片已就绪，将覆盖每处匹配名称。';
+            } catch { if (!gone() && version === imageVersion) hint.textContent = '无法读取图片，请换一张。'; }
+            finally { uploadBusy--; if (!gone()) action('generate').disabled = uploadBusy > 0; }
+        });
+        field('fontFile').addEventListener('change', async () => {
+            const version = ++fontVersion;
+            const file = field('fontFile').files[0];
+            if (uploadedFont) document.fonts.delete(uploadedFont);
+            uploadedFont = null; invalidate();
+            const hint = dialog.querySelector('[data-role="fontHint"]');
+            if (!file) { hint.textContent = '请选择字体文件。'; return; }
+            if (file.size > 25 * 1024 * 1024) { hint.textContent = '请选择不超过 25 MB 的字体。'; return; }
+            uploadBusy++; action('generate').disabled = true; hint.textContent = '正在加载字体…';
+            try {
+                const face = new FontFace(`BookmarkLocal${Date.now()}`, await file.arrayBuffer());
+                await face.load();
+                if (gone() || version !== fontVersion) return;
+                document.fonts.add(face); uploadedFont = face; hint.textContent = '字体已就绪。';
+            } catch { if (!gone() && version === fontVersion) hint.textContent = '无法读取字体，请换一个字体文件。'; }
+            finally { uploadBusy--; if (!gone()) action('generate').disabled = uploadBusy > 0; }
+        });
+        action('generate').onclick = () => {
+            invalidate();
+            action('generate').disabled = true;
+            preview.replaceChildren();
+            status.textContent = '正在生成…';
+            render(revision);
+        };
         action('full').onclick = () => { field('body').value = full; invalidate(); };
         action('snippet').onclick = () => { field('body').value = snippet; invalidate(); };
         action('cancel').onclick = () => { exportToken++; status.textContent = '正在取消…'; };
@@ -135,24 +215,45 @@
                 }
                 const unique = [...new Set(names)].sort((a, b) => b.length - a.length);
                 const regex = unique.length ? new RegExp(unique.map(escapeRegex).join('|'), 'gu') : null;
-                const redact = text => regex ? text.replace(regex, '\u2588\u2588\u2588') : text;
+                const redact = text => {
+                    const clean = text.replaceAll(MASK, '');
+                    return regex ? clean.replace(regex, MASK) : clean;
+                };
                 // Raw text is removed before layout, and never drawn underneath a mask.
                 const safeBody = redact(body.replace(/\r\n?/g, '\n'));
                 const safeTitle = redact(field('title').value.trim());
                 dialog.dataset.theme = field('theme').value;
                 const css = getComputedStyle(dialog);
                 const style = {
-                    paper: css.getPropertyValue('--sb-paper').trim(),
-                    ink: css.getPropertyValue('--sb-ink').trim(),
-                    accent: css.getPropertyValue('--sb-accent').trim(),
-                    font: css.getPropertyValue('--sb-font').trim(),
+                    paper: field('paper').value,
+                    ink: field('ink').value,
+                    accent: field('ink').value,
+                    font: theme.fontFamily,
                     size: Number(field('size').value) || Number(css.getPropertyValue('--sb-body-size')),
                     spacing: Number(css.getPropertyValue('--sb-line-height')),
                     pad: Number(css.getPropertyValue('--sb-pad')),
+                    maskStyle: field('maskStyle').value,
+                    maskImage,
                 };
+                if (style.maskStyle === 'image' && !maskImage) { status.textContent = '请先上传遮罩图片。'; return; }
+                const fontChoice = field('font').value;
+                if (fontChoice === 'serif') style.font = '"Noto Serif SC", "Songti SC", SimSun, serif';
+                if (fontChoice === 'sans') style.font = '"Microsoft YaHei", "PingFang SC", sans-serif';
+                if (fontChoice === 'custom') {
+                    const fontName = field('fontName').value.trim();
+                    if (!fontName) { status.textContent = '请填写字体名称。'; return; }
+                    style.font = `${JSON.stringify(fontName)}, sans-serif`;
+                }
+                if (fontChoice === 'uploaded') {
+                    if (!uploadedFont) { status.textContent = '请先上传字体文件。'; return; }
+                    style.font = `"${uploadedFont.family}", sans-serif`;
+                }
+                await document.fonts.load(`${style.size}px ${style.font}`);
+                if (obsolete()) return;
                 const measure = document.createElement('canvas').getContext('2d');
                 if (!measure) throw new Error('浏览器不支持 Canvas 2D');
                 measure.font = `${style.size}px ${style.font}`;
+                measure.fontKerning = 'none';
                 const lines = await wrap(safeBody, measure, WIDTH - style.pad * 2, obsolete);
                 if (obsolete()) return;
                 measure.font = `bold ${style.size + 6}px ${style.font}`;
@@ -175,6 +276,7 @@
                     canvas.setAttribute('aria-label', `已打码书摘，第 ${i + 1} 页`);
                     const caption = document.createElement('figcaption');
                     const save = document.createElement('button');
+                    save.className = 'menu_button';
                     save.type = 'button'; save.textContent = `保存第 ${i + 1} / ${count} 张`;
                     save.onclick = () => exportPages([page]);
                     caption.append(save); figure.append(canvas, caption); preview.append(figure);
@@ -190,6 +292,8 @@
                 action('save').disabled = false;
             } catch (error) {
                 if (!obsolete()) { pages = []; preview.replaceChildren(); status.textContent = `生成失败：${error.message}`; }
+            } finally {
+                if (!obsolete()) action('generate').disabled = uploadBusy > 0;
             }
         }
         const lazyPages = new WeakMap();
@@ -260,7 +364,7 @@
             else {
                 const printable = char === '\t' ? '    ' : char;
                 let size = cache.get(printable);
-                if (size === undefined) { size = context.measureText(printable).width; cache.set(printable, size); }
+                if (size === undefined) { size = printable === MASK ? parseFloat(context.font.replace(/^bold\s+/, '')) * 2.8 : context.measureText(printable).width; cache.set(printable, size); }
                 if (width + size > maxWidth && line) { lines.push(line); line = ''; width = 0; }
                 line += printable; width += size;
             }
@@ -284,16 +388,61 @@
         ctx.scale(scale, scale);
         ctx.fillStyle = s.paper; ctx.fillRect(0, 0, WIDTH, height);
         ctx.textBaseline = 'top';
+        ctx.fontKerning = 'none';
         let y = s.pad;
         ctx.fillStyle = s.accent; ctx.fillRect(s.pad, y - 20, 32, 3);
         ctx.fillStyle = s.ink;
         ctx.font = `bold ${s.size + 6}px ${s.font}`;
-        for (const title of page.titles) { ctx.fillText(title, s.pad, y); y += s.size + 14; }
+        for (const title of page.titles) { drawLine(ctx, title, s.pad, y, s, s.size + 6); y += s.size + 14; }
         if (page.titles.length) y += 28;
         ctx.font = `${s.size}px ${s.font}`;
-        for (const line of page.lines) { ctx.fillText(line, s.pad, y); y += s.size * s.spacing; }
+        for (const line of page.lines) { drawLine(ctx, line, s.pad, y, s, s.size); y += s.size * s.spacing; }
         ctx.fillStyle = s.accent; ctx.font = `16px ${s.font}`;
         ctx.fillText(`${page.index} / ${page.count}`, s.pad, height - s.pad + 12);
+    }
+
+    function opaqueColor(value) {
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#202127'; ctx.fillStyle = value.trim(); ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+        return a ? `rgb(${r}, ${g}, ${b})` : '#202127';
+    }
+
+    function drawLine(ctx, line, x, y, style, size) {
+        const parts = line.split(MASK);
+        for (let i = 0; i < parts.length; i++) {
+            ctx.fillStyle = style.ink;
+            ctx.fillText(parts[i], x, y);
+            x += ctx.measureText(parts[i]).width;
+            if (i === parts.length - 1) continue;
+            const width = size * 2.8;
+            const height = size * 1.08;
+            ctx.save();
+            ctx.beginPath(); ctx.roundRect(x + 2, y, width - 4, height, size * .22); ctx.clip();
+            // Paint paper first: transparent uploads cannot reveal underlying names.
+            ctx.fillStyle = style.paper; ctx.fillRect(x, y, width, height);
+            if (style.maskStyle === 'image') {
+                const img = style.maskImage;
+                const scale = Math.max(width / img.width, height / img.height);
+                ctx.drawImage(img, x + (width - img.width * scale) / 2, y + (height - img.height * scale) / 2, img.width * scale, img.height * scale);
+            } else {
+                // Decorative frosted mosaic only: never blur the original sensitive text.
+                ctx.fillStyle = style.ink;
+                ctx.globalAlpha = .08; ctx.fillRect(x, y, width, height);
+                ctx.filter = `blur(${size * .09}px)`;
+                const cell = size * .3;
+                for (let row = 0; row < 4; row++) for (let col = 0; col < 10; col++) {
+                    ctx.globalAlpha = .08 + ((row * 7 + col * 3) % 5) * .035;
+                    ctx.fillRect(x + col * cell, y + row * cell, cell + 1, cell + 1);
+                }
+                ctx.filter = 'none'; ctx.globalAlpha = .34;
+                const sheen = ctx.createLinearGradient(x, y, x + width, y + height);
+                sheen.addColorStop(0, '#ffffff'); sheen.addColorStop(1, '#ffffff00');
+                ctx.fillStyle = sheen; ctx.fillRect(x, y, width, height);
+            }
+            ctx.restore(); x += width;
+        }
     }
 
     // Observe insertion only. Streaming text nodes never trigger a full-chat rescan.

@@ -1,59 +1,49 @@
-/* The same palette values are used by the canvas renderer in index.js. */
-.st-bookmark-entry { cursor: pointer; gap: .4em; }
+/* Screenshot templates; controls follow SillyTavern's native theme. */
+.st-bookmark-entry { cursor: pointer; }
 .st-bookmark-dialog {
-  --sb-paper: #faf6ed; --sb-ink: #302c27; --sb-accent: #967958;
-  --sb-font: Georgia, "Noto Serif SC", "Songti SC", SimSun, serif;
-  --sb-body-size: 28; --sb-line-height: 1.85; --sb-pad: 56;
-  color: #e8e8ed; background: #202127; border: 1px solid #555761;
-  border-radius: 16px; padding: 0; width: min(1100px, 95vw);
-  max-width: 95vw; height: min(850px, 92dvh); max-height: 92dvh;
-  box-shadow: 0 20px 80px #0008; font: 14px/1.5 system-ui, sans-serif;
+ --sb-paper: #faf6ed; --sb-ink: #302c27;
+ --sb-body-size: 28; --sb-line-height: 1.85; --sb-pad: 56;
+ color: var(--SmartThemeBodyColor, inherit);
+ border: 1px solid var(--SmartThemeBorderColor, currentColor);
+ border-radius: var(--mainBorderRadius, 12px);
+ padding: 0; width: min(1100px, 95vw); max-width: 95vw;
+ height: min(900px, 92dvh); max-height: 92dvh;
+ box-shadow: 0 12px 60px var(--SmartThemeShadowColor, #0005);
+ font-size: var(--mainFontSize, 16px); line-height: 1.5;
+ opacity: 1 !important; backdrop-filter: none !important;
 }
-.st-bookmark-dialog[data-theme="clean"] {
-  --sb-paper: #ffffff; --sb-ink: #202631; --sb-accent: #68778a;
-  --sb-font: "Microsoft YaHei", "PingFang SC", sans-serif;
-  --sb-body-size: 27; --sb-line-height: 1.8; --sb-pad: 56;
-}
-.st-bookmark-dialog[data-theme="night"] {
-  --sb-paper: #202933; --sb-ink: #e1e5e8; --sb-accent: #a6bac8;
-  --sb-font: "Microsoft YaHei", "PingFang SC", sans-serif;
-  --sb-body-size: 28; --sb-line-height: 1.85; --sb-pad: 56;
-}
-.st-bookmark-dialog[data-theme="compact"] {
-  --sb-paper: #f1f4f0; --sb-ink: #29362c; --sb-accent: #697d6d;
-  --sb-font: "Microsoft YaHei", "PingFang SC", sans-serif;
-  --sb-body-size: 25; --sb-line-height: 1.65; --sb-pad: 44;
-}
-.st-bookmark-dialog::backdrop { background: #0009; }
-.st-bookmark-shell { display: flex; flex-direction: column; height: 100%; }
-.st-bookmark-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #45464d; gap: 12px; }
-.st-bookmark-header h2 { margin: 0; font-size: 18px; color: inherit; }
-.st-bookmark-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(250px, 340px) 1fr; }
-.st-bookmark-controls { padding: 18px; overflow: auto; border-right: 1px solid #45464d; }
-.st-bookmark-controls label { display: block; margin-bottom: 14px; text-align: left; }
-.st-bookmark-controls small { display: block; color: #b8bbc8; margin: 5px 0; }
-.st-bookmark-dialog input[type="text"], .st-bookmark-dialog textarea, .st-bookmark-dialog select {
-  box-sizing: border-box; width: 100%; background: #15161b; color: #eee;
-  border: 1px solid #555761; border-radius: 7px; padding: 9px; margin-top: 5px; font: inherit;
-}
-.st-bookmark-dialog textarea { resize: vertical; min-height: 80px; }
-.st-bookmark-dialog [data-field="body"] { min-height: 170px; }
-.st-bookmark-dialog button {
-  background: #343741; color: #f4f4f6; border: 1px solid #626675;
-  border-radius: 7px; padding: 8px 12px; cursor: pointer; font: inherit;
-}
-.st-bookmark-dialog button:disabled { opacity: .5; cursor: wait; }
-.st-bookmark-dialog button:focus-visible, .st-bookmark-dialog input:focus-visible, .st-bookmark-dialog textarea:focus-visible, .st-bookmark-dialog select:focus-visible { outline: 2px solid #bdcaff; outline-offset: 2px; }
-.st-bookmark-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
-.st-bookmark-dialog .st-bookmark-primary { background: #d4ddff; color: #202638; }
-.st-bookmark-preview { overflow: auto; background: #111217; padding: 20px; }
-.st-bookmark-preview canvas { display: block; width: 100%; height: auto; box-shadow: 0 4px 24px #0005; }
-.st-bookmark-page { margin: 0 auto 20px; max-width: 720px; }
-.st-bookmark-page figcaption { text-align: center; padding: 8px; color: #b8bbc8; }
-.st-bookmark-status { min-height: 24px; color: #cbd4f5; }
+.st-bookmark-dialog[data-theme="clean"] { --sb-paper: #ffffff; --sb-ink: #202631; --sb-body-size: 27; --sb-line-height: 1.8; --sb-pad: 56; }
+.st-bookmark-dialog[data-theme="night"] { --sb-paper: #202933; --sb-ink: #e1e5e8; --sb-body-size: 28; --sb-line-height: 1.85; --sb-pad: 56; }
+.st-bookmark-dialog[data-theme="compact"] { --sb-paper: #f1f4f0; --sb-ink: #29362c; --sb-body-size: 25; --sb-line-height: 1.65; --sb-pad: 44; }
+.st-bookmark-dialog::backdrop { background: #0006; }
+.st-bookmark-shell { display: flex; flex-direction: column; height: 100%; background: inherit; }
+.st-bookmark-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; gap: 12px; border-bottom: 1px solid var(--SmartThemeBorderColor, currentColor); }
+.st-bookmark-header h2 { margin: 0; font-size: 1.1em; font-weight: 600; color: inherit; }
+.st-bookmark-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(260px, 350px) 1fr; background: inherit; }
+.st-bookmark-controls { padding: 20px; overflow: auto; border-right: 1px solid var(--SmartThemeBorderColor, currentColor); }
+.st-bookmark-controls label { display: block; margin-bottom: 16px; text-align: left; }
+.st-bookmark-controls small { display: block; font-size: .78em; line-height: 1.5; margin: 6px 0; color: var(--SmartThemeQuoteColor, inherit); }
+.st-bookmark-dialog input[type="text"], .st-bookmark-dialog textarea, .st-bookmark-dialog select { box-sizing: border-box; width: 100%; margin-top: 6px; font: inherit; }
+.st-bookmark-dialog textarea { resize: vertical; min-height: 76px; }
+.st-bookmark-dialog [data-field="body"] { min-height: 145px; }
+.st-bookmark-dialog input[type="file"] { display: block; width: 100%; margin-top: 8px; font-size: .8em; }
+.st-bookmark-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.st-bookmark-colors input { display: block; width: 100%; height: 36px; margin-top: 8px; cursor: pointer; }
+.st-bookmark-dialog .menu_button { font-family: inherit; max-width: 100%; width: auto; white-space: normal; }
+.st-bookmark-dialog button:disabled { opacity: .45; cursor: default; }
+.st-bookmark-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.st-bookmark-dialog .st-bookmark-primary { font-weight: 600; border-color: var(--SmartThemeQuoteColor, currentColor); }
+.st-bookmark-preview { overflow: auto; padding: 28px; background: inherit; }
+.st-bookmark-preview canvas { display: block; width: 100%; height: auto; box-shadow: 0 3px 18px var(--SmartThemeShadowColor, #0003); }
+.st-bookmark-page { margin: 0 auto 24px; max-width: 720px; }
+.st-bookmark-page figcaption { display: flex; justify-content: center; padding: 12px; }
+.st-bookmark-status { min-height: 24px; font-size: .85em; }
+.st-bookmark-empty { margin: 15vh auto; max-width: 22em; text-align: center; color: var(--SmartThemeQuoteColor, inherit); }
+.st-bookmark-dialog [hidden] { display: none !important; }
 @media (max-width: 650px) {
-  .st-bookmark-dialog { height: 94dvh; max-height: 94dvh; }
-  .st-bookmark-layout { display: block; overflow: auto; }
-  .st-bookmark-controls { overflow: visible; border-right: 0; }
-  .st-bookmark-preview { overflow: visible; padding: 12px; }
+ .st-bookmark-dialog { height: 94dvh; max-height: 94dvh; }
+ .st-bookmark-layout { display: block; overflow: auto; }
+ .st-bookmark-controls { overflow: visible; border-right: 0; }
+ .st-bookmark-preview { overflow: visible; padding: 16px; }
+ .st-bookmark-empty { margin: 30px auto; }
 }
